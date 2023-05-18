@@ -24,7 +24,7 @@ def get_chatglm_lora(model):
     model = AutoModel.from_pretrained("model", trust_remote_code=True)
     peft_path = "lora/adapter_model.bin"
     peft_config = LoraConfig(task_type=TaskType.CAUSAL_LM, inference_mode=True, r=8, lora_alpha=32, lora_dropout=0.1)
-    torch.set_default_tensor_type(torch.cuda.FloatTensor)  # bnb quant for LoRA float tensor
+    torch.set_default_tensor_type(torch.cuda.FloatTensor)  # for FP32 LoRA model.
     model = get_peft_model(model, peft_config)
     model.load_state_dict(torch.load(peft_path), strict=False)
     model.seqlen = 256
@@ -41,14 +41,10 @@ def chatglm_lora_sequential(model, dataloader, dev):
 
     model.base_model.model.transformer.word_embeddings = model.base_model.model.transformer.word_embeddings.to(dev)
     layers[0] = layers[0].to(dev)
-    # Final layer norm before output.
     model.base_model.model.transformer.final_layernorm = model.base_model.model.transformer.final_layernorm.to(dev)
-
-    # layers[0] = layers[0].to(dev)
 
     dtype = next(iter(model.parameters())).dtype
     inps = torch.zeros((args.nsamples, model.seqlen, model.config.hidden_size), dtype=dtype, device=dev)
-    # cache = {'i': 0, 'attention_mask': None, 'token_type_ids': None, 'position_ids': None}  # changed here cache
     cache = {'i': 0, 'attention_mask': None, 'position_ids': None}
 
     class Catcher(nn.Module):
@@ -58,11 +54,10 @@ def chatglm_lora_sequential(model, dataloader, dev):
             self.module = module
 
         def forward(self, inp, **kwargs):
-            # According modeling_chatglm line 940
+            # The shape is according to https://huggingface.co/THUDM/chatglm-6b/blob/main/modeling_chatglm.py#L966
             inps[cache['i']] = inp[:, 0, :]
             cache['i'] += 1
             cache['attention_mask'] = kwargs['attention_mask']
-            # cache['token_type_ids'] = kwargs['token_type_ids'] # changed here cache
             cache['position_ids'] = kwargs['position_ids']
             raise ValueError
 
@@ -80,7 +75,6 @@ def chatglm_lora_sequential(model, dataloader, dev):
 
     outs = torch.zeros_like(inps)
     attention_mask = cache['attention_mask']
-    # token_type_ids = cache['token_type_ids']
     position_ids = cache['position_ids']
 
     print('Ready.')
@@ -96,10 +90,8 @@ def chatglm_lora_sequential(model, dataloader, dev):
 
         layer = layers[i].to(dev)
         full = find_layers(layer)
-        if args.true_sequential:
-            sequential = [['self_attn.k_proj', 'self_attn.v_proj', 'self_attn.q_proj'], ['self_attn.o_proj'], ['mlp.up_proj', 'mlp.gate_proj'], ['mlp.down_proj']]
-        else:
-            sequential = [list(full.keys())]
+        # TODO true sequential
+        sequential = [list(full.keys())]
 
         for names in sequential:
             subset = {n: full[n] for n in names}
@@ -119,7 +111,7 @@ def chatglm_lora_sequential(model, dataloader, dev):
             for name in subset:
                 handles.append(subset[name].register_forward_hook(add_batch(name)))
             for j in range(args.nsamples):
-                # According to modeling_chatglm line 608
+                # The shape is according to https://huggingface.co/THUDM/chatglm-6b/blob/main/modeling_chatglm.py#L623
                 outs[j] = layer(inps[j].unsqueeze(1), position_ids, attention_mask, i)[0][:, 0, :]
             for h in handles:
                 h.remove()
