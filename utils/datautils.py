@@ -7,6 +7,24 @@ def set_seed(seed):
     torch.random.manual_seed(seed)
 
 
+def get_custom(nsamples, seed, seqlen, model, calib_data=None):
+    import json_lines
+
+    with open(calib_data, 'r') as f:
+        data = []
+        for item in json_lines.reader(f):
+            if len(item['input_ids']) > seqlen:
+                print(len(item['input_ids']))
+                input_ids = torch.tensor(item['input_ids'][len(item['input_ids']) - seqlen:], dtype=torch.long).unsqueeze(0).contiguous()
+                labels = torch.tensor(item['labels'], dtype=torch.long).unsqueeze(0).contiguous()
+                data.append((input_ids, labels))
+            if len(data) >= nsamples:
+                break
+        assert len(data) == nsamples, 'need nsamples, this data is not enough'
+
+    return data, None
+
+
 def get_wikitext2(nsamples, seed, seqlen, model):
     from datasets import load_dataset
     traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
