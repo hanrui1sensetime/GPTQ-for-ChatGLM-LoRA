@@ -11,4 +11,3 @@ for key in model.keys():
 
 with open('pytorch_model.bin.index.json', 'w+') as f:
     json.dump(jsondict, f)
-
