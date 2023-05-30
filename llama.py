@@ -20,7 +20,7 @@ def get_llama(model):
     torch.nn.init.normal_ = skip
     from transformers import LlamaForCausalLM
     model = LlamaForCausalLM.from_pretrained(model, torch_dtype=torch.float16)
-    model.seqlen = 2048
+    model.seqlen = 512
     return model
 
 
@@ -319,7 +319,7 @@ def load_quant(model, checkpoint, wbits, groupsize=-1, fused_mlp=True, eval=True
         quant.autotune_warmup_linear(model, transpose=not (eval))
         if eval and fused_mlp:
             quant.autotune_warmup_fused(model)
-    model.seqlen = 2048
+    model.seqlen = 512
     print('Done.')
 
     return model
@@ -433,7 +433,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('model', type=str, help='llama model to load')
-    parser.add_argument('dataset', type=str, choices=['wikitext2', 'ptb', 'c4'], help='Where to extract calibration data from.')
+    parser.add_argument('dataset', type=str, choices=['custom', 'wikitext2', 'ptb', 'c4'], help='Where to extract calibration data from.')
     parser.add_argument('--seed', type=int, default=0, help='Seed for sampling the calibration data.')
     parser.add_argument('--nsamples', type=int, default=128, help='Number of calibration data samples.')
     parser.add_argument('--percdamp', type=float, default=.01, help='Percent of the average Hessian diagonal to use for dampening.')
@@ -474,7 +474,7 @@ if __name__ == '__main__':
         model = get_llama(args.model)
         model.eval()
 
-    dataloader, testloader = get_loaders(args.dataset, nsamples=args.nsamples, seed=args.seed, model=args.model, seqlen=model.seqlen)
+    dataloader, testloader = get_loaders(args.dataset, nsamples=args.nsamples, seed=args.seed, model=args.model, seqlen=model.seqlen, calib_data='/root/workspace/external_data/PJ_duiqi_output.jsonl')
 
     if not args.load and args.wbits < 16 and not args.nearest:
         tick = time.time()
