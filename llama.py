@@ -362,7 +362,7 @@ def llama_multigpu(model, gpus, gpu_dist):
         for i in range(len(gpu_dist)):
             assigned_gpus = assigned_gpus + [i] * gpu_dist[i]
 
-        remaining_assignments = len(layers)-len(assigned_gpus)
+        remaining_assignments = len(layers) - len(assigned_gpus)
         if remaining_assignments > 0:
             assigned_gpus = assigned_gpus + [-1] * remaining_assignments
 
@@ -451,7 +451,10 @@ if __name__ == '__main__':
     parser.add_argument('--act-order', action='store_true', help='Whether to apply the activation order GPTQ heuristic')
     parser.add_argument('--true-sequential', action='store_true', help='Whether to run in true sequential model.')
     parser.add_argument('--new-eval', action='store_true', help='Whether to use the new PTB and C4 eval')
-    parser.add_argument('--layers-dist', type=str, default='', help='Distribution of layers across GPUs. e.g. 2:1:1 for 2 layers on GPU 0, 1 layer on GPU 1, and 1 layer on GPU 2. Any remaining layers will be assigned to your last GPU.')
+    parser.add_argument('--layers-dist',
+                        type=str,
+                        default='',
+                        help='Distribution of layers across GPUs. e.g. 2:1:1 for 2 layers on GPU 0, 1 layer on GPU 1, and 1 layer on GPU 2. Any remaining layers will be assigned to your last GPU.')
     parser.add_argument('--observe',
                         action='store_true',
                         help='Auto upgrade layer precision to higher precision, for example int2 to int4, groupsize 128 to 64. \
