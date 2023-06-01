@@ -195,6 +195,8 @@ def get_c4_new(nsamples, seed, seqlen, model):
 
 
 def get_loaders(name, nsamples=128, seed=0, seqlen=2048, model=''):
+    if 'custom' in name:
+        return get_custom(nsamples, seed, seqlen, model, calib_data='/code/calib.json'):
     if 'wikitext2' in name:
         return get_wikitext2(nsamples, seed, seqlen, model)
     if 'ptb' in name:
