@@ -117,7 +117,7 @@ def chatglm_lora_sequential(model, dataloader, dev):
                 h.remove()
 
             for name in subset:
-                scale, zero, g_idx, error = gptq[name].fasterquant(percdamp=args.percdamp, groupsize=args.groupsize, actorder=args.act_order, name=name)
+                scale, zero, g_idx, error = gptq[name].fasterquant(percdamp=args.percdamp, groupsize=args.groupsize, actorder=args.act_order, sparse=True, prunen=2, prunem=4, name=name)
                 quantizers['base_model.model.transformer.layers.%d.%s' % (i, name)] = (gptq[name].quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), args.wbits, args.groupsize)
 
                 if args.observe:
@@ -161,7 +161,7 @@ def chatglm_lora_sequential(model, dataloader, dev):
 
                 gptq.quantizer.configure(wbits, perchannel=True, sym=args.sym, mse=False)
 
-                scale, zero, g_idx, error = gptq.fasterquant(percdamp=args.percdamp, groupsize=groupsize, actorder=args.act_order, name=name)
+                scale, zero, g_idx, error = gptq.fasterquant(percdamp=args.percdamp, groupsize=groupsize, actorder=args.act_order, sparse=True, prunen=2, prunem=4, name=name)
 
                 table.add_row([wbits, groupsize, error])
                 quantizers['transformer.layers.%d.%s' % (layerid, name)] = (gptq.quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), wbits, groupsize)

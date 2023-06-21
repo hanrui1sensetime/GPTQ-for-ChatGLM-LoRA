@@ -125,7 +125,7 @@ class GPTQ:
         table.add_row([name, weight_error, fp_SNR, q_SNR, timecost])
         print(table.draw().split('\n')[-2])
 
-    def fasterquant(self, blocksize=128, percdamp=.01, groupsize=-1, actorder=False, name=''):
+    def fasterquant(self, blocksize=128, percdamp=.01, groupsize=-1, actorder=False, sparse=False, prunen=0, prunem=0, sparsity=0.5, name=''):
         self.layer.to(self.dev)
 
         W = self.layer.weight.data.clone()
@@ -162,6 +162,7 @@ class GPTQ:
         H = torch.cholesky_inverse(H)
         H = torch.linalg.cholesky(H, upper=True)
         Hinv = H
+        mask = None
 
         g_idx = []
         scale = []
@@ -178,9 +179,29 @@ class GPTQ:
             Losses1 = torch.zeros_like(W1)
             Hinv1 = Hinv[i1:i2, i1:i2]
 
+            if sparse:
+                if prunen == 0:
+                    if mask is not None:
+                        mask1 = mask[:, i1:i2]
+                    else:
+                        tmp = W1**2 / (torch.diag(Hinv1).reshape((1, -1)))**2
+                        thresh = torch.sort(tmp.flatten())[0][int(tmp.numel() * sparsity)]
+                        mask1 = tmp <= thresh
+                else:
+                    mask1 = torch.zeros_like(W1) == 1
+
             for i in range(count):
                 w = W1[:, i]
                 d = Hinv1[i, i]
+
+                if sparse:
+                    if prunen != 0 and i % prunem == 0:
+                        tmp = W1[:, i:(i + prunem)]**2 / (torch.diag(Hinv1)[i:(i + prunem)].reshape((1, -1)))**2
+                        mask1.scatter_(1, i + torch.topk(tmp, prunen, dim=1, largest=False)[1], True)
+
+                q = w.clone()
+                if sparse:
+                    q[mask1[:, i]] = 0
 
                 if groupsize != -1:
                     if (i1 + i) % groupsize == 0:
@@ -191,7 +212,7 @@ class GPTQ:
                         zero.append(self.quantizer.zero)
                         now_idx += 1
 
-                q = self.quantizer.quantize(w.unsqueeze(1)).flatten()
+                q = self.quantizer.quantize(q.unsqueeze(1)).flatten()
                 Q1[:, i] = q
                 Losses1[:, i] = (w - q)**2 / d**2
 
