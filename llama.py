@@ -477,7 +477,7 @@ if __name__ == '__main__':
         model = get_llama(args.model)
         model.eval()
 
-    dataloader, testloader = get_loaders(args.dataset, nsamples=args.nsamples, seed=args.seed, model=args.model, seqlen=model.seqlen, calib_data='/root/workspace/external_data/PJ_duiqi_output.jsonl')
+    dataloader, testloader = get_loaders(args.dataset, nsamples=args.nsamples, seed=args.seed, model=args.model, seqlen=model.seqlen)
 
     if not args.load and args.wbits < 16 and not args.nearest:
         tick = time.time()
