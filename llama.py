@@ -6,6 +6,7 @@ import torch.nn as nn
 import quant
 
 from gptq import GPTQ, Observer
+from quant.quantizer import Quantizer, pseudo_quantize_tensor
 from utils import find_layers, DEV, set_seed, get_wikitext2, get_ptb, get_c4, get_ptb_new, get_c4_new, get_loaders, export_quant_table, gen_conditions
 from texttable import Texttable
 
@@ -87,11 +88,20 @@ def llama_sequential(model, dataloader, dev):
             sequential = [['self_attn.k_proj', 'self_attn.v_proj', 'self_attn.q_proj'], ['self_attn.o_proj'], ['mlp.up_proj', 'mlp.gate_proj'], ['mlp.down_proj']]
         else:
             sequential = [list(full.keys())]
-
+        if args.use_kvcache:
+            kvcache = {}
         for names in sequential:
             subset = {n: full[n] for n in names}
             gptq = {}
+
             for name in subset:
+                if args.use_kvcache and ('k_proj' in name or 'v_proj' in name):
+                    if 'k_proj' in name:
+                        gptq[name + '_kcache'] = Quantizer(model.config.hidden_size // args.kvcache_groupsize)
+                        gptq[name + '_kcache'].configure(args.kvcache_bit, perchannel=True, mse=False)
+                    if 'v_proj' in name:
+                        gptq[name + '_vcache'] = Quantizer(model.config.hidden_size // args.kvcache_groupsize)
+                        gptq[name + '_vcache'].configure(args.kvcache_bit, perchannel=True, mse=False)
                 gptq[name] = GPTQ(subset[name], observe=args.observe)
                 gptq[name].quantizer.configure(args.wbits, perchannel=True, sym=args.sym, mse=False)
 
@@ -102,9 +112,21 @@ def llama_sequential(model, dataloader, dev):
 
                 return tmp
 
+            def get_attn(name):
+
+                def tmp(module, x, y):
+                    if name not in kvcache:
+                        kvcache[name] = y
+                    else:
+                        kvcache[name] = torch.cat((kvcache[name], y), dim=0)
+
+                return tmp
+
             handles = []
             for name in subset:
                 handles.append(subset[name].register_forward_hook(add_batch(name)))
+                if args.use_kvcache and ('k_proj' in name or 'v_proj' in name):
+                    handles.append(subset[name].register_forward_hook(get_attn(name)))
             for j in range(args.nsamples):
                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]
             for h in handles:
@@ -113,6 +135,26 @@ def llama_sequential(model, dataloader, dev):
             for name in subset:
                 scale, zero, g_idx, error = gptq[name].fasterquant(percdamp=args.percdamp, groupsize=args.groupsize, actorder=args.act_order, name=name)
                 quantizers['model.layers.%d.%s' % (i, name)] = (gptq[name].quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), args.wbits, args.groupsize)
+                if args.use_kvcache and 'k_proj' in name:
+                    # gptq[name + '_kcache'].find_params(kvcache[name].view((kvcache[name].shape[0] * kvcache[name].shape[1], -1, args.kvcache_groupsize)))
+                    bsz, seqlen = kvcache[name].shape[0:2]
+                    _, scales, zeros = pseudo_quantize_tensor(kvcache[name].view(bsz, seqlen, -1, args.kvcache_groupsize).permute(2, 0, 1, 3).reshape(-1, bsz * seqlen * args.kvcache_groupsize),
+                                                              args.kvcache_bit,
+                                                              True,
+                                                              bsz * seqlen * args.kvcache_groupsize,
+                                                              get_scale_zp=True)
+                    gptq[name + '_kcache'].scale = scales
+                    gptq[name + '_kcache'].zero = zeros
+                    quantizers['model.layers.%d.self_attn.k_cache' % i] = (gptq[name + '_kcache'].cpu(), scales.cpu(), zeros.cpu(), args.kvcache_bit, args.kvcache_groupsize)
+                if args.use_kvcache and 'v_proj' in name:
+                    _, scales, zeros = pseudo_quantize_tensor(kvcache[name].view(bsz, seqlen, -1, args.kvcache_groupsize).permute(2, 0, 1, 3).reshape(-1, bsz * seqlen * args.kvcache_groupsize),
+                                                              args.kvcache_bit,
+                                                              True,
+                                                              bsz * seqlen * args.kvcache_groupsize,
+                                                              get_scale_zp=True)
+                    gptq[name + '_vcache'].scale = scales
+                    gptq[name + '_vcache'].zero = zeros
+                    quantizers['model.layers.%d.self_attn.v_cache' % i] = (gptq[name + '_vcache'].cpu(), scales.cpu(), zeros.cpu(), args.kvcache_bit, args.kvcache_groupsize)
 
                 if args.observe:
                     observer.submit(name=name, layerid=i, gptq=gptq[name], error=error)
@@ -139,7 +181,7 @@ def llama_sequential(model, dataloader, dev):
             layerid = item[1]
             gptq = item[2]['gptq']
             error = item[2]['error']
-            target = error / 2
+            target = error / 2  # TODO parameterize the divisor
 
             table = Texttable()
             table.header(['wbits', 'groupsize', 'error'])
@@ -166,6 +208,13 @@ def llama_sequential(model, dataloader, dev):
             gptq.free()
 
     model.config.use_cache = use_cache
+    quant_params = {}
+    for key in quantizers.keys():
+        quant_params[key] = quantizers[key][-2:]
+    with open('quant_params.json', 'w') as f:
+        import json
+        json.dump(quant_params, f)
+    # torch.save(quant_params, 'quant_params.bin')
 
     return quantizers
 
@@ -262,21 +311,31 @@ def llama_eval(model, testenc, dev):
 
 
 # TODO: perform packing on GPU
-def llama_pack(model, quantizers, wbits, groupsize):
+def llama_pack(model, quantizers, wbits, groupsize, use_kvcache=False, kvcache_bits=None, kvcache_groupsize=None):
     layers = find_layers(model)
-    layers = {n: layers[n] for n in quantizers}
-    quant.make_quant_linear(model, quantizers, wbits, groupsize)
+    kvcache_quantizers = {}
+    weight_quantizers = {}
+    for key in quantizers.keys():
+        if 'cache' in key:
+            kvcache_quantizers[key] = quantizers[key]
+        else:
+            weight_quantizers[key] = quantizers[key]
+    del quantizers
+    layers = {n: layers[n] for n in weight_quantizers}
+    if use_kvcache:
+        quant.make_quant_llama_attention_kvcache(model, kvcache_quantizers, kvcache_bits, kvcache_groupsize)
+    quant.make_quant_linear(model, weight_quantizers, wbits, groupsize)
     qlayers = find_layers(model, [quant.QuantLinear])
     print('Packing ...')
     for name in qlayers:
         print(name)
-        quantizers[name], scale, zero, g_idx, _, _ = quantizers[name]
+        weight_quantizers[name], scale, zero, g_idx, _, _ = weight_quantizers[name]
         qlayers[name].pack(layers[name], scale, zero, g_idx)
     print('Done.')
     return model
 
 
-def load_quant(model, checkpoint, wbits, groupsize=-1, fused_mlp=True, eval=True, warmup_autotune=True, act_order=True):
+def load_quant(model, checkpoint, wbits, groupsize=-1, fused_mlp=True, eval=True, warmup_autotune=True, act_order=True, use_kvcache=False, kvcache_bit=8, kvcache_groupsize=128):
     from transformers import LlamaConfig, LlamaForCausalLM, modeling_utils
     config = LlamaConfig.from_pretrained(model)
 
@@ -298,7 +357,12 @@ def load_quant(model, checkpoint, wbits, groupsize=-1, fused_mlp=True, eval=True
     for name in ['lm_head']:
         if name in layers:
             del layers[name]
-    quant.make_quant_linear(model, layers, wbits, groupsize, act_order)
+    if use_kvcache:
+        quant.make_quant_llama_attention_kvcache(model, layers, kvcache_bit, kvcache_groupsize)
+    with open('quant_params.json', 'r') as f:
+        import json
+        quant_params = json.load(f)
+    quant.make_quant_linear(model, layers, wbits, groupsize, act_order, quant_params=quant_params)
 
     del layers
 
@@ -441,6 +505,9 @@ if __name__ == '__main__':
     parser.add_argument('--wbits', type=int, default=16, choices=[2, 3, 4, 8, 16], help='#bits to use for quantization; use 16 for evaluating base model.')
     parser.add_argument('--trits', action='store_true', help='Whether to use trits for quantization.')
     parser.add_argument('--groupsize', type=int, default=-1, help='Groupsize to use for quantization; default uses full row.')
+    parser.add_argument('--use_kvcache', action='store_true', help='Use kvcache for inference.')
+    parser.add_argument('--kvcache_bit', type=int, default=8, help='kvcache quant bits.')
+    parser.add_argument('--kvcache_groupsize', type=int, default=128, help='kvcache quant groupsize.')
     parser.add_argument('--eval', action='store_true', help='evaluate quantized model.')
     parser.add_argument('--save', type=str, default='', help='Save quantized checkpoint under this name.')
     parser.add_argument('--save_safetensors', type=str, default='', help='Save quantized `.safetensors` checkpoint under this name.')
@@ -462,7 +529,7 @@ if __name__ == '__main__':
     parser.add_argument('--quant-directory', type=str, default=None, help='Specify the directory for export quantization parameters to toml format. `None` means no export by default.')
 
     args = parser.parse_args()
-
+    assert not args.act_order
     if args.layers_dist:
         gpu_dist = [int(x) for x in args.layers_dist.split(':')]
     else:
@@ -506,8 +573,8 @@ if __name__ == '__main__':
     if args.quant_directory is not None:
         export_quant_table(quantizers, args.quant_directory)
 
-    if not args.observe and args.save:
-        llama_pack(model, quantizers, args.wbits, args.groupsize)
+    if args.save:
+        llama_pack(model, quantizers, args.wbits, args.groupsize, args.use_kvcache, args.kvcache_bit, args.kvcache_groupsize)
         torch.save(model.state_dict(), args.save)
 
     if not args.observe and args.save_safetensors:

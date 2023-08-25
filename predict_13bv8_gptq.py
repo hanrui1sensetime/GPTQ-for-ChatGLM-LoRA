@@ -7,7 +7,6 @@ import sys
 from dataclasses import dataclass, field
 from itertools import chain
 from typing import Optional, List, Any, Dict, Optional, Union, Tuple
-
 # # 特殊注入use_reentrant 切换默认值
 # from torch.utils.checkpoint import checkpoint as old_checkpoint
 # def new_checkpoint(function, *args, use_reentrant: bool = False, **kwargs):
@@ -127,7 +126,15 @@ class MyTrainer(Seq2SeqTrainer):
                 with init_empty_weights():
                     model = AutoModelForCausalLM.from_pretrained(my_args.model_name, config=config, torch_dtype=torch.float16, trust_remote_code=True)
                 from llama import load_quant
-                model = load_quant(my_args.model_name, '/root/workspace/external_data/pjllama13bv8/pjllama13bv8-gptq-w4-g64.bin', my_args.w_bit, groupsize=64, act_order=True)
+                # model = load_quant(my_args.model_name, '/root/workspace/external_data/pjllama13bv8/pjllama13bv8-gptq-w4-g64.bin', my_args.w_bit, groupsize=64, act_order=True)
+                model = load_quant(my_args.model_name,
+                                   '/root/workspace/external_data/pjllama13bv8/gptq-w4g64kv8g128-search-5.bin',
+                                   my_args.w_bit,
+                                   groupsize=64,
+                                   act_order=False,
+                                   use_kvcache=True,
+                                   kvcache_bit=8,
+                                   kvcache_groupsize=128)
                 '''
                 real_quantize_model_weight(
                     model, w_bit=my_args.w_bit, q_config=q_config, init_only=True)

@@ -79,7 +79,7 @@ try:
         C is of shape (M, N) float16
         scales is of shape (G, N) float16
         zeros is of shape (G, N) float16
-        g_ptr is of shape (K) int32 
+        g_ptr is of shape (K) int32
         """
         infearure_per_bits = 32 // bits
 
@@ -198,7 +198,7 @@ try:
         C is of shape (M, K) float16
         scales is of shape (G, N) float16
         zeros is of shape (G, N) float16
-        g_ptr is of shape (K) int32 
+        g_ptr is of shape (K) int32
         """
         infearure_per_bits = 32 // bits
 
@@ -300,11 +300,15 @@ class QuantLinearFunction(torch.autograd.Function):
             grad_input = transpose_matmul248(grad_output, qweight, scales, qzeros, g_idx, bits, maxq)
         return grad_input, None, None, None, None, None, None
 
+
 class QuantLinear(nn.Module):
+
     def __init__(self, bits, groupsize, infeatures, outfeatures, bias, act_order=True):
         super().__init__()
-        if bits not in [4]:
+        if bits not in [2, 4, 8]:
             raise NotImplementedError("Only 4 bits are supported.")
+        if bits == 8:
+            print('debugging')
         self.infeatures = infeatures
         self.outfeatures = outfeatures
         self.bits = bits
@@ -388,7 +392,7 @@ class QuantLinear(nn.Module):
         return out.reshape(out_shape)
 
 
-def make_quant_linear(module, names, bits, groupsize,act_order=True, name=''):
+def make_quant_linear(module, names, bits, groupsize, act_order=True, name='', quant_params=None):
     if isinstance(module, QuantLinear):
         return
     for attr in dir(module):
@@ -396,9 +400,11 @@ def make_quant_linear(module, names, bits, groupsize,act_order=True, name=''):
         name1 = name + '.' + attr if name != '' else attr
         if name1 in names:
             delattr(module, attr)
+            bits = quant_params[name1][0] if quant_params else bits
+            groupsize = quant_params[name1][1] if quant_params else groupsize
             setattr(module, attr, QuantLinear(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None, act_order=act_order))
     for name1, child in module.named_children():
-        make_quant_linear(child, names, bits, groupsize,act_order, name + '.' + name1 if name != '' else name1)
+        make_quant_linear(child, names, bits, groupsize, act_order, name + '.' + name1 if name != '' else name1, quant_params=quant_params)
 
 
 def autotune_warmup_linear(model, transpose=False):
