@@ -42,7 +42,7 @@ def load_model():
         from transformers import AutoTokenizer
         from peft import get_peft_model, LoraConfig, TaskType
         torch.set_default_tensor_type(torch.cuda.HalfTensor)
-        tokenizer = AutoTokenizer.from_pretrained("/root/workspace/external_data/7bv5/lora", trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained("/root/workspace/external_data/internlm-7b/lora", trust_remote_code=True)
         '''
         model_config = BloomConfig.from_pretrained(
             '/root/workspace/external_data/7bv5/lora',
@@ -66,8 +66,14 @@ def load_model():
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
         print('finished load peft!')
         '''
-        from bloom_lora import load_quant
-        model = load_quant('/root/workspace/external_data/7bv5/lora', '/root/workspace/external_data/7bv5/lora/bloom-lora-int4-gptq.bin', 4, 128, eval=False, act_order=False)
+        from internlm_lora import load_quant
+        model = load_quant('/root/workspace/external_data/internlm-7b/lora',
+                           '/root/workspace/external_data/internlm-7b/lora/internlm-lora-int4-gptq.bin',
+                           4,
+                           128,
+                           fused_mlp=False,
+                           eval=True,
+                           act_order=True)
 
         model_loaded = True
         print('1 model on :', next(model.parameters()).device)
