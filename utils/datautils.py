@@ -194,9 +194,9 @@ def get_c4_new(nsamples, seed, seqlen, model):
     return trainloader, valenc
 
 
-def get_loaders(name, nsamples=128, seed=0, seqlen=2048, model=''):
+def get_loaders(name, nsamples=128, seed=0, seqlen=2048, model='', calib_data=None):
     if 'custom' in name:
-        return get_custom(nsamples, seed, seqlen, model, calib_data='/root/workspace/external_data/llama_calib.jsonl')
+        return get_custom(nsamples, seed, seqlen, model, calib_data=calib_data)
     if 'wikitext2' in name:
         return get_wikitext2(nsamples, seed, seqlen, model)
     if 'ptb' in name:

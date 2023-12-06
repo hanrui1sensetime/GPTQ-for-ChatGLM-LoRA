@@ -77,9 +77,9 @@ def bloom_sequential(model, dataloader, dev):
     for i in range(len(layers)):
 
         print(f'Quantizing layer {i+1}/{len(layers)}..')
-        print('+------------------+--------------+------------+-----------+-------+')
-        print('|       name       | weight_error | fp_inp_SNR | q_inp_SNR | time  |')
-        print('+==================+==============+============+===========+=======+')
+        print('+--------------------------------+--------------+------------+-----------+-------+')
+        print('|              name              | weight_error | fp_inp_SNR | q_inp_SNR | time  |')
+        print('+================================+==============+============+===========+=======+')
 
         layer = layers[i].to(dev)
         full = find_layers(layer)
@@ -459,6 +459,7 @@ if __name__ == '__main__':
                         help='Auto upgrade layer precision to higher precision, for example int2 to int4, groupsize 128 to 64. \
             When this feature enabled, `--save` or `--save_safetensors` would be disable.')
     parser.add_argument('--quant-directory', type=str, default=None, help='Specify the directory for export quantization parameters to toml format. `None` means no export by default.')
+    parser.add_argument('--calib_data', type=str, default=None, help='Custom calib dataset.')
 
     args = parser.parse_args()
 
@@ -475,8 +476,7 @@ if __name__ == '__main__':
     else:
         model = get_bloom(args.model)
         model.eval()
-
-    dataloader, testloader = get_loaders(args.dataset, nsamples=args.nsamples, seed=args.seed, model=args.model, seqlen=256, calib_data='/root/workspace/external_data/PJ_duiqi_output.jsonl')
+    dataloader, testloader = get_loaders(args.dataset, nsamples=args.nsamples, seed=args.seed, model=args.model, seqlen=256, calib_data=args.calib_data)
 
     if not args.load and args.wbits < 16 and not args.nearest:
         tick = time.time()
@@ -494,6 +494,7 @@ if __name__ == '__main__':
             benchmark(model, input_ids, check=args.check)
 
     if args.eval:
+        # custom datasets do not use eval, because we evaluate medical GPT models by our Medical dataset.
         datasets = ['wikitext2', 'ptb', 'c4']
         if args.new_eval:
             datasets = ['wikitext2', 'ptb-new', 'c4-new']
