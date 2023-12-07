@@ -132,7 +132,7 @@ def bloom_sequential(model, dataloader, dev):
         torch.cuda.empty_cache()
 
         inps, outs = outs, inps
-        print('+------------------+--------------+------------+-----------+-------+')
+        print('+--------------------------------+--------------+------------+-----------+-------+')
         print('\n')
 
     if args.observe:
