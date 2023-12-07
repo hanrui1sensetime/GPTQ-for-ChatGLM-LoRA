@@ -57,7 +57,7 @@ CUDA_VISIBLE_DEVICES=0 python bloom.py ${MODEL_DIR} custom --wbits 4 --act-order
 
 ```
 # Generate 4-bit PULSE-7B with lora model
-CUDA_VISIBLE_DEVICES=0 python bloom.py ${MODEL_DIR} custom --wbits 4 --act-order --groupsize 128 --save pulse7b-4bit-128g.bin --calib_data ${CALIB_DATA_PATH} --peft_path ${PEFT_PATH}
+CUDA_VISIBLE_DEVICES=0 python bloom_lora.py ${MODEL_DIR} custom --wbits 4 --act-order --groupsize 128 --save pulse7b-4bit-128g.bin --calib_data ${CALIB_DATA_PATH} --peft_path ${PEFT_PATH}
 ```
 
 # Acknowledgements
