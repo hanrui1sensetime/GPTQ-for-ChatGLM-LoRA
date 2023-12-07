@@ -99,7 +99,8 @@ class GPTQ:
         self.H += inp.matmul(inp.t())
 
     def print_loss(self, name, q_weight, weight_error, timecost):
-        table = Texttable()
+        table = Texttable(max_width=96)
+        table.set_cols_width([30, 12, 10, 9, 5])
         name += ' ' * (16 - len(name))
 
         table.header(['name', 'weight_error', 'fp_inp_SNR', 'q_inp_SNR', 'time'])
