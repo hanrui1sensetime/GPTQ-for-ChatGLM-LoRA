@@ -11,7 +11,7 @@ GPTQ is SOTA one-shot weight quantization method
 **Triton only supports Linux, so if you are a Windows user, please use [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install).**
 
 ## News or Update
-**AutoGPTQ-triton, a packaged version of GPTQ with triton, has been integrated into [AutoGPTQ](https://github.com/PanQiWei/AutoGPTQ).**
+**Support pulse model with lora finetuning 4-bit quantization.**
 ## Result
 MedGPT results are evaluated on the medical dataset.
 
@@ -41,6 +41,7 @@ python setup_cuda.py install
 * `transformers`: tested on v4.34.0
 * `datasets`: tested on v2.13.1
 * `safetensors`: tested on v0.3.1
+* `peft`: tested on v0.7.0
 
 All experiments were run on a single NVIDIA RTX3090.
 
@@ -52,6 +53,11 @@ PULSE-7B model is implemented by bloomz.
 ```
 # Generate 4-bit PULSE-7B model
 CUDA_VISIBLE_DEVICES=0 python bloom.py ${MODEL_DIR} custom --wbits 4 --act-order --groupsize 128 --save pulse7b-4bit-128g.bin --calib_data ${CALIB_DATA_PATH}
+```
+
+```
+# Generate 4-bit PULSE-7B with lora model
+CUDA_VISIBLE_DEVICES=0 python bloom.py ${MODEL_DIR} custom --wbits 4 --act-order --groupsize 128 --save pulse7b-4bit-128g.bin --calib_data ${CALIB_DATA_PATH} --peft_path ${PEFT_PATH}
 ```
 
 # Acknowledgements
