@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 
 DEV = torch.device('cuda:0')
-from module.peft.tuners.lora import MergedLinear
+from peft.tuners.lora import Linear
 
 
-def find_layers(module, layers=[nn.Conv2d, nn.Linear, MergedLinear], name=''):
+def find_layers(module, layers=[nn.Conv2d, nn.Linear, Linear], name=''):
     if type(module) in layers:
         return {name: module}
     res = {}
