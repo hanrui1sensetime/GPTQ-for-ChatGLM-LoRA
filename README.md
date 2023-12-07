@@ -3,7 +3,7 @@
 
 4 bits quantization of [LLaMA](https://arxiv.org/abs/2302.13971) and [Bloom](https://arxiv.org/abs/2211.05100) using [GPTQ](https://arxiv.org/abs/2210.17323)
 
-This repo is modified from [GPTQ-for-LLaMa](https://github.com/qwopqwop200/GPTQ-for-LLaMa)
+This repo is modified from [GPTQ-for-LLaMa](https://github.com/qwopqwop200/GPTQ-for-LLaMa), the basic usage is the same as that repo, FYI.
 
 GPTQ is SOTA one-shot weight quantization method
 
